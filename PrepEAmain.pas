@@ -33,7 +33,7 @@ const
   SampleCol = 1;
   PrepCol = 2;
   TarCol = 3;
-  Version = '2015-Sept-15';
+  myVersion = '2020-March-09';
 
 type
   TEASequence = array of string;
@@ -49,11 +49,9 @@ type
     Panel6: TPanel;
     TCPClient1: TIdTCPClient;
     DBgrdBatch: TDBGrid;
-    StrGrdEAData: TJvStringGrid;
     cbEAMethods: TComboBox;
     btnSendSamplesToEAgrid: TButton;
     btnSetEAData: TButton;
-    grdSample: TJvStringGrid;
     dsCheckTargetNr: TDataSource;
     btn_Refresh: TButton;
     btn_remove_entry: TButton;
@@ -75,19 +73,24 @@ type
     FDQueryCheckTargetNr: TFDQuery;
     FDGUIxErrorDialog1: TFDGUIxErrorDialog;
     FDGUIxLoginDialog1: TFDGUIxLoginDialog;
+    EditInsertIntoEALine: TLabeledEdit;
+    grdSample1: TJvStringGrid;
+    StrGrdEAData: TJvStringGrid;
+    CheckBoxShowAllBatches: TCheckBox;
     procedure DBgrdBatchCellClick(Column: TColumn);
     procedure FormShow(Sender: TObject);
     procedure btnSendSamplesToEAgridClick(Sender: TObject);
     procedure btnSetEADataClick(Sender: TObject);
     procedure StrGrdEADataSelectCell(Sender: TObject; ACol, ARow: Integer;
       var CanSelect: Boolean);
-    procedure dsDataChange(Sender: TObject; Field: TField);
     procedure btn_RefreshClick(Sender: TObject);
     procedure btn_remove_entryClick(Sender: TObject);
     procedure btn_upClick(Sender: TObject);
     procedure btn_downClick(Sender: TObject);
     procedure btn_add_entryClick(Sender: TObject);
     procedure cbEAMethodsExit(Sender: TObject);
+    procedure EditInsertIntoEALineChange(Sender: TObject);
+    procedure CheckBoxShowAllBatchesClick(Sender: TObject);
   private
     ActiveBatch: string;
     EASequence, EATemp: TEASequence;
@@ -108,6 +111,7 @@ type
     procedure SetWeight(SampleNr, Weight: string);
     procedure LoadBatches;
     procedure CMDialogKey(var msg: TCMDialogKey); message CM_DIALOGKEY;
+    procedure CreateRowNumbers;
   public
     { Public declarations }
   end;
@@ -139,6 +143,18 @@ begin
     end;
   end;
   inherited;
+end;
+
+procedure TfrmPrepEA.CreateRowNumbers;
+var
+  Local_ARow: Integer;
+begin
+  // add row number
+  with StrGrdEAData do
+  begin
+    for Local_ARow := 1 to RowCount - 1 do
+      Cells[0, Local_ARow] := IntToStr(Local_ARow);
+  end;
 end;
 
 
@@ -179,10 +195,11 @@ begin
     Cells[3, 0] := 'Method';
     Cells[4, 0] := 'prep_nr';
     Cells[5, 0] := 'target_nr';
-    ColWidths[0] := 15; //Nr
-    ColWidths[2] := 75; //Name
+    ColWidths[0] := 17; //Nr
+    ColWidths[1] := 62; //weight
+    ColWidths[2] := 80; //Name
     ColWidths[3] := 90; //Merthod
-    ColWidths[4] := 50; //Prep, [5]=Target
+    ColWidths[4] := 45; //Prep, [5]=Target
     (* for ARow := 1 to RowCount do begin
       Cells[1, ARow] := '';
       Cells[2, ARow] := '';
@@ -233,7 +250,7 @@ begin
 
 
     // send samples do EAGrid
-  with grdSample do begin
+  with grdSample1 do begin
       for j := 1 to RowCount - 1 do SendSampleToEAgrid(j);
   end;
   btnSetEAData.Enabled := true;
@@ -261,11 +278,13 @@ end;
 procedure TfrmPrepEA.btn_add_entryClick(Sender: TObject);
 begin
   StrGrdEAData.InsertRow(StrGrdEAData.Row);
+  CreateRowNumbers;
 end;
 
 procedure TfrmPrepEA.btn_downClick(Sender: TObject);
 begin
   StrGrdEAData.MoveRow(StrGrdEAData.Row,StrGrdEAData.Row+1);
+  CreateRowNumbers;
 end;
 
 procedure TfrmPrepEA.btn_RefreshClick(Sender: TObject);
@@ -276,6 +295,7 @@ end;
 procedure TfrmPrepEA.btn_upClick(Sender: TObject);
 begin
   StrGrdEAData.MoveRow(StrGrdEAData.Row,StrGrdEAData.Row-1);
+  CreateRowNumbers;
 end;
 
 procedure TfrmPrepEA.cbEAMethodsExit(Sender: TObject);
@@ -288,6 +308,11 @@ begin
       with StrGrdEAData do
         Cells[col, row] := Items[ItemIndex];
   end;
+end;
+
+procedure TfrmPrepEA.CheckBoxShowAllBatchesClick(Sender: TObject);
+begin
+  LoadBatches;
 end;
 
 procedure TfrmPrepEA.CloseTCP;
@@ -326,11 +351,11 @@ begin
   end;
 
   // create empty cells in SampleGrid according to the number of samples in the batch
-  grdSample.RowCount:=FDQuerySamplesOfBatch.RecordCount+1;
+  grdSample1.RowCount:=FDQuerySamplesOfBatch.RecordCount+1;
   // number the lines of the SampleGrid
-  for i := 1 to grdSample.RowCount - 1 do begin
-  grdSample.Cells[0, i] := IntToStr(i);
-    for j := 1 to grdSample.ColCount do grdSample.Cells[j, i] := '';
+  for i := 1 to grdSample1.RowCount - 1 do begin
+  grdSample1.Cells[0, i] := IntToStr(i);
+    for j := 1 to grdSample1.ColCount do grdSample1.Cells[j, i] := '';
   end;
   // send the samples of this batch to the SampleGrid
   btnSendSamplesToEAGrid.Enabled:=true;
@@ -339,7 +364,7 @@ begin
 end;
 
 
-procedure TfrmPrepEA.dsDataChange(Sender: TObject; Field: TField);
+procedure TfrmPrepEA.EditInsertIntoEALineChange(Sender: TObject);
 begin
 
 end;
@@ -352,8 +377,8 @@ var
   s: string;
 begin
   // display version number (set in const)
-  StatusBar.Panels.Items[0].Text :='Version: ' + Version;
-
+  StatusBar.Panels.Items[0].Text :='Version: ' + myVersion;
+  frmPrepEA.Caption := 'Batch2EA, Version ' + myVersion;
   // set software to testmode
   TestMode := false;
 
@@ -384,27 +409,29 @@ begin
 // if so load the file
 // if not create a temporary definition set with default parameters
    // path do file
-   Try
-      FDManager.ConnectionDefFileAutoLoad := false;
-      FDManager.ConnectionDefFileName := ExtractFilePath(Application.ExeName) + 'conndef.ini';
-      FDManager.LoadConnectionDefFile;
-      FDConnection1.ConnectionDefName := 'myconn';
-      //ShowMessage(FDManager.ConnectionDefs.Count.ToString());
-      FDConnection1.Connected := True;
 
-      //FDConnection1 := TFDConnection.Create(nil);
-   Except
-    // catch errors
-      On E:Exception Do
-      Begin
-      ShowMessage(E.message);
-      ShowMessage(E.ToString);
-      Exit;
 
-//      if E.Kind = ekUKViolated Then ShowMessage('ConnDef file not found');
-//      raise;
-      End;
-      Else ShowMessage('Error Connecting to the Database. Check connection definitions file.');
+//   Try
+//      FDManager.ConnectionDefFileAutoLoad := false;
+//      FDManager.ConnectionDefFileName := ExtractFilePath(Application.ExeName) + 'conndef.ini';
+//      FDManager.LoadConnectionDefFile;
+//      FDConnection1.ConnectionDefName := 'myconn';
+//      //ShowMessage(FDManager.ConnectionDefs.Count.ToString());
+//      FDConnection1.Connected := True;
+//
+//      //FDConnection1 := TFDConnection.Create(nil);
+//   Except
+//    // catch errors
+//      On E:Exception Do
+//      Begin
+//      ShowMessage(E.message);
+//      ShowMessage(E.ToString);
+//      Exit;
+//
+////      if E.Kind = ekUKViolated Then ShowMessage('ConnDef file not found');
+////      raise;
+//      End;
+//      Else ShowMessage('Error Connecting to the Database. Check connection definitions file.');
 //      if FDManager.ConnectionDefFileLoaded = false then
 //        begin
 //          // use default setting as temporary definition
@@ -419,7 +446,7 @@ begin
 //            end;
 //            FDConnection1.Connected := True;
 //        end;
-   End;
+//   End;
 
 // Load all available batches at the beginning of the program
   FDQuerySamplesOfBatch.Close;
@@ -511,6 +538,7 @@ procedure TfrmPrepEA.btn_remove_entryClick(Sender: TObject);
 //removes selected line from EAGrid
 begin
   StrGrdEAData.RemoveRow(StrGrdEAData.Row);
+  CreateRowNumbers;
 end;
 
 procedure TfrmPrepEA.SendBatchToEAGrid;
@@ -627,7 +655,7 @@ begin
       First;
       while not eof do
       begin
-        with grdSample do
+        with grdSample1 do
         begin
           if i < 11 then
           begin
@@ -682,7 +710,7 @@ begin
   while j <= NumOfSamples do
   begin
     //sample_nr: sample_nr.prep_nr.target_nr
-    StrGrdEAData.Cells[2, i] := grdSample.Cells[SampleCol, j] + '.' + grdSample.Cells[PrepCol, j] + '.' + grdSample.Cells[TarCol, j] ;
+    StrGrdEAData.Cells[2, i] := grdSample1.Cells[SampleCol, j] + '.' + grdSample1.Cells[PrepCol, j] + '.' + grdSample1.Cells[TarCol, j] ;
     // Method for samples
     StrGrdEAData.Cells[3, i] := 'G_100s';
     // sample_Nr: the RunIns between the samples
@@ -693,7 +721,9 @@ begin
     begin
       s := 'SELECT weight_combustion, prep_nr, target_nr' +
         ' FROM target_t' +
-        ' WHERE sample_nr =' + #34 + grdSample.Cells[SampleCol, j] + #34 + ';';
+        ' WHERE sample_nr =' + #34 + grdSample1.Cells[SampleCol, j] + #34 +
+        ' AND prep_nr = ' + #34 + grdSample1.Cells[PrepCol, j] + #34 +
+        ' AND target_nr = ' + #34 + grdSample1.Cells[TarCol, j] + #34 + ';';
       SQL.Text := s;
       open;
       if RecordCount > 0 then
@@ -709,17 +739,16 @@ begin
       end;
     end;
     // insert prep_nr and target_nr
-    StrGrdEAData.Cells[4, i] := grdSample.Cells[prepCol, j]; //prep_nr
-    StrGrdEAData.Cells[5, i] := grdSample.Cells[tarCol, j]; //target_nr
+    StrGrdEAData.Cells[4, i] := grdSample1.Cells[prepCol, j]; //prep_nr
+    StrGrdEAData.Cells[5, i] := grdSample1.Cells[tarCol, j]; //target_nr
     //StrGrdEAData.Cells[3, i] := '';
     StrGrdEAData.Cells[3, i + 1] := 'Blank with O2';
     i := i + 2;
     inc(j);
   end;
-  with StrGrdEAData do begin
-    for ARow := 1 to RowCount - 1 do
-      Cells[0, ARow] := IntToStr(ARow);
-  end;
+
+  // create new row numbers
+  CreateRowNumbers;
 
   // add entries after the samples (RunIns etc etc)
   (* with StrGrdEAData do begin
@@ -750,16 +779,21 @@ var
   sWGH, sSNr, sNAM, sMET, Resp, t: string;
   i, j, ARow: integer;
   FieldEmpty: Boolean;
+  EALine: integer;
 begin
+  // set the line where the new data should be inserte into
+  EALine := strtoint(EditInsertIntoEALine.Text)-1;
+
   j := 1;
-  // get the name of the first sample
+  // get the name of the first sample in line 1
   t := '?NAM' + ' 1';
   if not TcpClient1.Connected then OpentCP;
-  TcpClient1.Port := SvrPort;
+  // TcpClient1.Port := SvrPort;
   if TcpClient1.Connected then
     with TCPClient1.IOHandler do
     begin
       WriteLn(t);
+      sleep(100)
     end;
  // if WordCount(Resp, [' ']) = 2 then begin //No Name in first Row (Col: Name) of VarioMICRO prgmm
 
@@ -774,24 +808,27 @@ begin
     begin
       for i := 1 to RowCount - 1 do
       begin
-        sSNr := Cells[0, i];
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
         sNAM := Cells[2, i];
         SetName(sSNr, sNAM); // send name to EA
-        sleep(10);
+        sleep(100);
       end;
       for i := 1 to RowCount - 1 do
       begin
-        sSNr := Cells[0, i];
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
         sMET := Cells[3, i];
         SetMethod(sSNr, sMET); // send method to EA
-        sleep(10);
+        sleep(100);
       end;
       for i := 1 to RowCount - 1 do
       begin
-        sSNr := Cells[0, i];
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
         sWGH := Cells[1, i];
         SetWeight(sSNr, sWGH);  // send weight to EA
-        sleep(10);
+        sleep(100);
       end;
     end
   else
@@ -799,7 +836,7 @@ begin
   //end
  // else begin
    // ShowMessage('Please create new VarioMICRO document before sending new Data.')
-  CloseTCP;
+  //CloseTCP;
 end;
 
 procedure TfrmPrepEA.SetMethod(SampleNr, Method: string);
@@ -809,6 +846,7 @@ begin
   MET := '!MET ' + SampleNr + ' ' + Method;
 //  OpenTCP;
   TcpClient1.Port := SvrPort;
+  if not TcpClient1.Connected then OpenTCP;
   if TcpClient1.Connected then
     with TCPClient1.IOHandler do
     begin
@@ -821,7 +859,8 @@ var
   NAM: string;
 begin
   NAM := '!NAM ' + SampleNr + ' ' + Name;
-//  OpenTCP;;
+
+  if not TcpClient1.Connected then OpenTCP;
   if TcpClient1.Connected then
     with TCPClient1.IOHandler do
     begin
@@ -836,6 +875,7 @@ var
 begin
   WGH := '!WGH ' + SampleNr + ' ' + Weight;
 //  OpentCP;
+  if not TcpClient1.Connected then OpenTCP;
   if TcpClient1.Connected then
     with TCPClient1.IOHandler do
     begin
@@ -848,12 +888,30 @@ procedure TfrmPrepEA.LoadBatches;
 begin
   // query the database for available batches within the last 2 month
   // that are not graphitized yet
-
-  with FDQuery1 do
-  begin
-    SQL.Text := 'SELECT distinct graph_batch FROM target_t t ' + 'inner join preparation_t p on t.sample_nr=p.sample_nr  ' + 'WHERE prep_end > DATE_SUB(now(), INTERVAL 2 MONTH) ' + ' and graph_batch IS NOT NULL AND graph_date IS NULL AND graphitized IS NULL ' + ' order by prep_end desc; ';
-    open;
-  end;
+  if CheckBoxShowAllBatches.Checked then
+  Begin
+      with FDQuery1 do
+        begin
+          SQL.Text := 'SELECT distinct graph_batch FROM target_t t ' +
+          'inner join preparation_t p on t.sample_nr=p.sample_nr  ' +
+          'WHERE prep_end > DATE_SUB(now(), INTERVAL 6 MONTH) ' +
+          ' and graph_batch IS NOT NULL AND graph_date IS NULL '
+          + ' order by prep_end desc; ';
+          open;
+        end;
+  End
+  Else if not CheckBoxShowAllBatches.Checked then
+  Begin
+      with FDQuery1 do
+      begin
+        SQL.Text := 'SELECT distinct graph_batch FROM target_t t ' +
+        'inner join preparation_t p on t.sample_nr=p.sample_nr  ' +
+        'WHERE prep_end > DATE_SUB(now(), INTERVAL 3 MONTH) ' +
+        ' and graph_batch IS NOT NULL AND graph_date IS NULL AND graphitized IS NULL '
+        + ' order by prep_end desc; ';
+        open;
+      end;
+  End
 end;
 
 

@@ -1,0 +1,13 @@
+program PrepEA;
+
+uses
+  Forms,
+  PrepEAmain in '..\PrepEAmain.pas' {frmPrepEA};
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.CreateForm(TfrmPrepEA, frmPrepEA);
+  Application.Run;
+end.

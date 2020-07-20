@@ -56,6 +56,15 @@ object frmPrepEA: TfrmPrepEA
       ParentBackground = False
       ParentFont = False
       TabOrder = 0
+      object CheckBoxShowAllBatches: TCheckBox
+        Left = 192
+        Top = 13
+        Width = 97
+        Height = 17
+        Caption = 'all'
+        TabOrder = 0
+        OnClick = CheckBoxShowAllBatchesClick
+      end
     end
     object DBgrdBatch: TDBGrid
       Left = 1
@@ -120,49 +129,20 @@ object frmPrepEA: TfrmPrepEA
       ParentFont = False
       TabOrder = 0
     end
-    object StrGrdEAData: TJvStringGrid
-      Left = 1
-      Top = 42
-      Width = 350
-      Height = 464
-      Hint = 'template for EA'
-      Align = alClient
-      BevelEdges = []
-      BevelInner = bvNone
-      BevelOuter = bvNone
-      DefaultRowHeight = 18
-      Font.Charset = DEFAULT_CHARSET
-      Font.Color = clWindowText
-      Font.Height = -8
-      Font.Name = 'MS Sans Serif'
-      Font.Style = []
-      Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goEditing]
-      ParentFont = False
-      ParentShowHint = False
-      ShowHint = True
-      TabOrder = 1
-      OnSelectCell = StrGrdEADataSelectCell
-      Alignment = taLeftJustify
-      FixedFont.Charset = DEFAULT_CHARSET
-      FixedFont.Color = clWindowText
-      FixedFont.Height = -11
-      FixedFont.Name = 'Tahoma'
-      FixedFont.Style = []
-    end
     object Panel7: TPanel
       Left = 1
-      Top = 506
+      Top = 472
       Width = 350
-      Height = 41
+      Height = 75
       Align = alBottom
-      TabOrder = 2
+      TabOrder = 1
       object btnSetEAData: TButton
         Left = 240
-        Top = 1
+        Top = 31
         Width = 109
         Height = 39
         Hint = 'send template to EA software'
-        Align = alRight
+        Align = alCustom
         Caption = 'Send to EA'
         Enabled = False
         Font.Charset = DEFAULT_CHARSET
@@ -177,12 +157,12 @@ object frmPrepEA: TfrmPrepEA
         OnClick = btnSetEADataClick
       end
       object btn_remove_entry: TButton
-        Left = 1
-        Top = 1
+        Left = 3
+        Top = 31
         Width = 51
         Height = 39
         Hint = 'remove line from template'
-        Align = alLeft
+        Align = alCustom
         Caption = '-'
         ParentShowHint = False
         ShowHint = True
@@ -191,7 +171,7 @@ object frmPrepEA: TfrmPrepEA
       end
       object btn_up: TButton
         Left = 112
-        Top = 1
+        Top = 31
         Width = 49
         Height = 39
         Align = alCustom
@@ -201,7 +181,7 @@ object frmPrepEA: TfrmPrepEA
       end
       object btn_down: TButton
         Left = 160
-        Top = 1
+        Top = 31
         Width = 50
         Height = 39
         Align = alCustom
@@ -211,7 +191,7 @@ object frmPrepEA: TfrmPrepEA
       end
       object btn_add_entry: TButton
         Left = 52
-        Top = 1
+        Top = 31
         Width = 54
         Height = 39
         Align = alCustom
@@ -219,6 +199,51 @@ object frmPrepEA: TfrmPrepEA
         TabOrder = 4
         OnClick = btn_add_entryClick
       end
+      object EditInsertIntoEALine: TLabeledEdit
+        Left = 320
+        Top = 6
+        Width = 24
+        Height = 19
+        EditLabel.Width = 69
+        EditLabel.Height = 13
+        EditLabel.Caption = 'Insert into line'
+        LabelPosition = lpLeft
+        NumbersOnly = True
+        TabOrder = 5
+        Text = '1'
+        OnChange = EditInsertIntoEALineChange
+      end
+    end
+    object StrGrdEAData: TJvStringGrid
+      Left = 1
+      Top = 42
+      Width = 350
+      Height = 430
+      Align = alClient
+      ColCount = 6
+      DefaultColWidth = 55
+      Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goEditing]
+      TabOrder = 2
+      OnSelectCell = StrGrdEADataSelectCell
+      Alignment = taLeftJustify
+      FixedFont.Charset = DEFAULT_CHARSET
+      FixedFont.Color = clWindowText
+      FixedFont.Height = -11
+      FixedFont.Name = 'Tahoma'
+      FixedFont.Style = []
+      ColWidths = (
+        55
+        55
+        55
+        55
+        55
+        55)
+      RowHeights = (
+        24
+        24
+        24
+        24
+        24)
     end
   end
   object cbEAMethods: TComboBox
@@ -256,30 +281,6 @@ object frmPrepEA: TfrmPrepEA
       ParentFont = False
       TabOrder = 0
     end
-    object grdsample: TJvStringGrid
-      Left = 1
-      Top = 42
-      Width = 206
-      Height = 464
-      Hint = 'list of samples of the selected batch'
-      Align = alClient
-      BevelEdges = []
-      BevelInner = bvNone
-      BevelOuter = bvNone
-      ColCount = 4
-      DefaultColWidth = 50
-      DefaultRowHeight = 18
-      RowCount = 8
-      ParentShowHint = False
-      ShowHint = True
-      TabOrder = 1
-      Alignment = taLeftJustify
-      FixedFont.Charset = DEFAULT_CHARSET
-      FixedFont.Color = clWindowText
-      FixedFont.Height = -11
-      FixedFont.Name = 'Tahoma'
-      FixedFont.Style = []
-    end
     object Panel8: TPanel
       Left = 1
       Top = 506
@@ -287,7 +288,7 @@ object frmPrepEA: TfrmPrepEA
       Height = 41
       Align = alBottom
       Caption = 'Panel8'
-      TabOrder = 2
+      TabOrder = 1
       object btnSendSamplesToEAgrid: TButton
         Left = 1
         Top = 1
@@ -309,6 +310,33 @@ object frmPrepEA: TfrmPrepEA
         OnClick = btnSendSamplesToEAgridClick
       end
     end
+    object grdSample1: TJvStringGrid
+      Left = 1
+      Top = 42
+      Width = 206
+      Height = 464
+      Align = alClient
+      ColCount = 4
+      DefaultColWidth = 50
+      TabOrder = 2
+      Alignment = taLeftJustify
+      FixedFont.Charset = DEFAULT_CHARSET
+      FixedFont.Color = clWindowText
+      FixedFont.Height = -11
+      FixedFont.Name = 'Tahoma'
+      FixedFont.Style = []
+      ColWidths = (
+        50
+        50
+        50
+        50)
+      RowHeights = (
+        24
+        24
+        24
+        24
+        24)
+    end
   end
   object TCPClient1: TIdTCPClient
     ConnectTimeout = 0
@@ -326,6 +354,10 @@ object frmPrepEA: TfrmPrepEA
   end
   object FDConnection1: TFDConnection
     Params.Strings = (
+      'Database=db_dmams'
+      'User_Name=mams'
+      'Password=Micadas.1'
+      'Server=192.168.123.30'
       'DriverID=MySQL')
     Left = 296
     Top = 88
@@ -341,7 +373,7 @@ object frmPrepEA: TfrmPrepEA
     Top = 152
   end
   object FDPhysMySQLDriverLink1: TFDPhysMySQLDriverLink
-    VendorLib = '\\psf\Home\my data\KTL\Software\GitHub\Batch2EA\libmySQL.dll'
+    VendorLib = 'libmySQL.dll'
     Left = 281
     Top = 392
   end

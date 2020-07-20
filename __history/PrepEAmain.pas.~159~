@@ -1,0 +1,941 @@
+unit PrepEAmain;
+{
+ lese Graph batches der letzten 4 Wochen aus DB
+ Wähle einen Batch aus
+ Zeige Inhalte in Grid
+ Erzeuge Vorlage für EA
+ Sende Vorlage an EA
+
+
+ In order to run this software the database connection
+ parameters have to be given when calling the exe file
+ ODBC connection, user and password
+}
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, Grids, JvExGrids, JvStringGrid, DBGrids, ADODB, IdBaseComponent,
+  IdComponent, IdTCPConnection, IdTCPClient, IDException, DB, ExtCtrls, ComCtrls, StdCtrls,
+  FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.UI.Intf,
+  FireDAC.Phys.Intf, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async,
+  FireDAC.Phys, FireDAC.Phys.MySQL, FireDAC.Phys.MySQLDef, FireDAC.Stan.Param,
+  FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, FireDAC.VCLUI.Wait,
+  FireDAC.Comp.UI, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
+  FireDAC.VCLUI.Error, FireDAC.VCLUI.Login;
+
+const
+// Connection to the EA Server (typically on the same Machine)
+  SvrPort: integer = 3000;
+  SvrHost: string = '127.0.0.1'; //localhost
+//  CheckCol = 1;
+  SampleCol = 1;
+  PrepCol = 2;
+  TarCol = 3;
+  Version = '2019-July-11';
+
+type
+  TEASequence = array of string;
+
+type
+  TfrmPrepEA = class(TForm)
+    StatusBar: TStatusBar;
+    Panel1: TPanel;
+    Panel2: TPanel;
+    Panel3: TPanel;
+    Panel4: TPanel;
+    Panel5: TPanel;
+    Panel6: TPanel;
+    TCPClient1: TIdTCPClient;
+    DBgrdBatch: TDBGrid;
+    cbEAMethods: TComboBox;
+    btnSendSamplesToEAgrid: TButton;
+    btnSetEAData: TButton;
+    dsCheckTargetNr: TDataSource;
+    btn_Refresh: TButton;
+    btn_remove_entry: TButton;
+    Panel7: TPanel;
+    Panel8: TPanel;
+    Panel9: TPanel;
+    btn_up: TButton;
+    btn_down: TButton;
+    btn_add_entry: TButton;
+    FDConnection1: TFDConnection;
+    FDQuery1: TFDQuery;
+    DataSource1: TDataSource;
+    FDPhysMySQLDriverLink1: TFDPhysMySQLDriverLink;
+    FDGUIxWaitCursor1: TFDGUIxWaitCursor;
+    FDQuery2: TFDQuery;
+    DataSource2: TDataSource;
+    FDQuerySamplesOfBatch: TFDQuery;
+    DataSourceSamplesOfBatch: TDataSource;
+    FDQueryCheckTargetNr: TFDQuery;
+    FDGUIxErrorDialog1: TFDGUIxErrorDialog;
+    FDGUIxLoginDialog1: TFDGUIxLoginDialog;
+    EditInsertIntoEALine: TLabeledEdit;
+    grdSample1: TJvStringGrid;
+    StrGrdEAData: TJvStringGrid;
+    CheckBoxShowAllBatches: TCheckBox;
+    procedure DBgrdBatchCellClick(Column: TColumn);
+    procedure FormShow(Sender: TObject);
+    procedure btnSendSamplesToEAgridClick(Sender: TObject);
+    procedure btnSetEADataClick(Sender: TObject);
+    procedure StrGrdEADataSelectCell(Sender: TObject; ACol, ARow: Integer;
+      var CanSelect: Boolean);
+    procedure btn_RefreshClick(Sender: TObject);
+    procedure btn_remove_entryClick(Sender: TObject);
+    procedure btn_upClick(Sender: TObject);
+    procedure btn_downClick(Sender: TObject);
+    procedure btn_add_entryClick(Sender: TObject);
+    procedure cbEAMethodsExit(Sender: TObject);
+    procedure EditInsertIntoEALineChange(Sender: TObject);
+    procedure CheckBoxShowAllBatchesClick(Sender: TObject);
+  private
+    ActiveBatch: string;
+    EASequence, EATemp: TEASequence;
+    TestMode : boolean;
+    procedure AddFinalEASamples;
+    procedure AddInitialEASamples;
+    procedure CloseTCP;
+    procedure GetBatchName;
+    procedure GetMethods;
+    procedure OpenTCP;
+    procedure RefreshEAGridNumber;
+    procedure SendBatchToEAGrid;
+    procedure SendBatchToSampleGrd;
+    procedure SendSampleToEAgrid(NumOfSamples: integer);
+    procedure SendGridDataToEA;
+    procedure SetMethod(SampleNr, Method: string);
+    procedure SetName(SampleNr, Name: string);
+    procedure SetWeight(SampleNr, Weight: string);
+    procedure LoadBatches;
+    procedure CMDialogKey(var msg: TCMDialogKey); message CM_DIALOGKEY;
+    procedure CreateRowNumbers;
+  public
+    { Public declarations }
+  end;
+
+var
+  frmPrepEA: TfrmPrepEA;
+
+implementation
+
+{$R *.dfm}
+uses
+  JvJCLutils;
+
+
+procedure TfrmPrepEA.CMDialogKey(var msg: TCMDialogKey);
+// this has something to do with dealing with the dropdown control
+// not sure what it does
+// http://www.delphi-treff.de/tipps-tricks/komponenten/tstringgrid/combobox-in-ein-stringgrid-einbauen/
+begin
+  if ActiveControl = cbEAMethods then
+  begin
+    if msg.CharCode = VK_TAB then
+    begin
+      // setzt den Fokus zurück auf das StringGrid
+      StrGrdEAData.SetFocus;
+      StrGrdEAData.Perform(WM_KEYDOWN, msg.CharCode, msg.KeyData);
+      msg.Result := 1;
+      exit;
+    end;
+  end;
+  inherited;
+end;
+
+procedure TfrmPrepEA.CreateRowNumbers;
+var
+  Local_ARow: Integer;
+begin
+  // add row number
+  with StrGrdEAData do
+  begin
+    for Local_ARow := 1 to RowCount - 1 do
+      Cells[0, Local_ARow] := IntToStr(Local_ARow);
+  end;
+end;
+
+
+procedure TfrmPrepEA.AddFinalEASamples;
+var
+  ARow, k: integer;
+begin
+  with StrGrdEAData do begin
+    k := RowCount;
+    RowCount := RowCount + 3;
+    for ARow := k to k + 3 do
+      Cells[1, ARow] := '1';
+    Cells[2, k] := 'Blank';
+    Cells[3, k] := 'Blank with O2';
+    Cells[4, k] := '';
+    Cells[5, k] := '';
+    for ARow := k + 1 to k + 2 do begin
+      Cells[2, ARow] := 'acetanilid';
+      Cells[3, ARow] := '2mgChem80s';
+      Cells[4, ARow] := '';
+      Cells[5, ARow] := '';
+    end;
+  end;
+  RefreshEAGridNumber;
+end;
+
+procedure TfrmPrepEA.AddInitialEASamples;
+var
+  ARow: integer;
+begin
+  StrGrdEAData.Cells[0, 1] := '1';
+  with StrGrdEAData do begin
+    ColCount := 6;
+    RowCount := 1; // used to be 6
+    Cells[0, 0] := 'Nr.';
+    Cells[1, 0] := 'Weight [mg]';
+    Cells[2, 0] := 'Name [MAMS]';
+    Cells[3, 0] := 'Method';
+    Cells[4, 0] := 'prep_nr';
+    Cells[5, 0] := 'target_nr';
+    ColWidths[0] := 17; //Nr
+    ColWidths[1] := 62; //weight
+    ColWidths[2] := 80; //Name
+    ColWidths[3] := 90; //Merthod
+    ColWidths[4] := 45; //Prep, [5]=Target
+    (* for ARow := 1 to RowCount do begin
+      Cells[1, ARow] := '';
+      Cells[2, ARow] := '';
+    end;
+    for ARow := 1 to 2 do begin
+      Cells[2, ARow] := 'Blank';
+      Cells[3, ARow] := 'Blank with O2';
+    end;
+    for ARow := 3 to 3 do begin
+      Cells[2, ARow] := 'RunIn';
+      Cells[3, ARow] := '2mgChem80s';
+    end;
+    for ARow := 4 to 5 do begin
+      Cells[2, ARow] := 'acetanilid';
+      Cells[3, ARow] := '2mgChem80s';
+    end;
+    for ARow := 6 to 6 do begin
+      Cells[2, ARow] := 'Blank';
+      Cells[3, ARow] := 'Blank with O2';
+    end;
+    for ARow := 1 to 6 do begin
+      Cells[1, ARow] := '1';
+    end; *)
+    for ARow := 1 to 1 do begin
+      Cells[1, ARow] := '1';
+      Cells[2, ARow] := 'RunIn';
+      Cells[3, ARow] := 'Blank with O2';
+    end;
+//    ResizeStringGrid(StrGrdEAData, gbxSettings2.Width);
+    with StrGrdEAData do begin
+      for ARow := 1 to RowCount - 1 do
+        Cells[0, ARow] := IntToStr(ARow);
+    end;
+  end;
+end;
+
+procedure TfrmPrepEA.btnSendSamplesToEAgridClick(Sender: TObject);
+var
+  i, j, k: integer;
+begin
+
+  //read available Methods from EA (only if not in testmode, testmode is set in fromshow)
+  if not TestMode then GetMethods;
+  if cbEAMethods.Items.Count > 0 then
+    StatusBar.Panels[2].Text := 'EA-Methods received.'
+    else
+    StatusBar.Panels[2].Text := 'no EA-Methods received.';
+
+
+    // send samples do EAGrid
+  with grdSample1 do begin
+      for j := 1 to RowCount - 1 do SendSampleToEAgrid(j);
+  end;
+  btnSetEAData.Enabled := true;
+  btn_up.Enabled:=true;
+  btn_down.Enabled:=true;
+  btn_add_entry.Enabled:=true;
+  btn_remove_entry.Enabled:=true;
+end;
+
+procedure TfrmPrepEA.btnSetEADataClick(Sender: TObject);
+var
+  i: integer;
+begin
+  with StrGrdEAData do
+  begin
+    SetLength(EASequence, RowCount - 1);
+    SetLength(EATemp, 0);
+    for i := 1 to RowCount - 1 do
+      EASequence[i - 1] := Cells[2, i];
+  end;
+//      btnEAStart.Enabled := true;
+  SendGridDataToEA;
+end;
+
+procedure TfrmPrepEA.btn_add_entryClick(Sender: TObject);
+begin
+  StrGrdEAData.InsertRow(StrGrdEAData.Row);
+  CreateRowNumbers;
+end;
+
+procedure TfrmPrepEA.btn_downClick(Sender: TObject);
+begin
+  StrGrdEAData.MoveRow(StrGrdEAData.Row,StrGrdEAData.Row+1);
+  CreateRowNumbers;
+end;
+
+procedure TfrmPrepEA.btn_RefreshClick(Sender: TObject);
+begin
+  LoadBatches;
+end;
+
+procedure TfrmPrepEA.btn_upClick(Sender: TObject);
+begin
+  StrGrdEAData.MoveRow(StrGrdEAData.Row,StrGrdEAData.Row-1);
+  CreateRowNumbers;
+end;
+
+procedure TfrmPrepEA.cbEAMethodsExit(Sender: TObject);
+// When exiting the dropdown field write the selected value into the grid field
+begin
+  with sender as TComboBox do
+  begin
+    hide;
+    if ItemIndex >= 0 then
+      with StrGrdEAData do
+        Cells[col, row] := Items[ItemIndex];
+  end;
+end;
+
+procedure TfrmPrepEA.CheckBoxShowAllBatchesClick(Sender: TObject);
+begin
+  LoadBatches;
+end;
+
+procedure TfrmPrepEA.CloseTCP;
+begin
+  try
+    TCPClient1.IOHandler.InputBuffer.Clear;
+    TCPClient1.Disconnect;
+    sleep(400);
+  except
+    on E: Exception do
+      if E is EIdConnClosedGracefully then
+      else
+        raise
+  end
+end;
+
+procedure TfrmPrepEA.DBgrdBatchCellClick(Column: TColumn);
+// use selected graph_batch and display its samples
+
+var
+  s: string;
+  i, j: integer;
+begin
+
+  with FDQuerySamplesOfBatch do
+  begin
+    s := 'SELECT sample_nr, weight_combustion, prep_nr, target_nr' +
+      ' FROM target_t' +
+      ' WHERE graph_batch =' + #34 + DataSource1.DataSet.FieldByName('graph_batch').AsString + #34 +
+      ' ORDER BY sample_nr, target_nr' +
+      ';';
+    SQL.Text := s;
+    open;
+    ActiveBatch := DataSource1.DataSet.FieldByName('graph_batch').AsString;    // set name of the active graph_batch
+    StatusBar.Panels[1].Text := 'Active batch: ' + ActiveBatch;
+  end;
+
+  // create empty cells in SampleGrid according to the number of samples in the batch
+  grdSample1.RowCount:=FDQuerySamplesOfBatch.RecordCount+1;
+  // number the lines of the SampleGrid
+  for i := 1 to grdSample1.RowCount - 1 do begin
+  grdSample1.Cells[0, i] := IntToStr(i);
+    for j := 1 to grdSample1.ColCount do grdSample1.Cells[j, i] := '';
+  end;
+  // send the samples of this batch to the SampleGrid
+  btnSendSamplesToEAGrid.Enabled:=true;
+  SendBatchToSampleGrd;
+
+end;
+
+
+procedure TfrmPrepEA.EditInsertIntoEALineChange(Sender: TObject);
+begin
+
+end;
+
+//############################################################################
+procedure TfrmPrepEA.FormShow(Sender: TObject);
+// this runs when the main window is being displayed
+
+var
+  s: string;
+begin
+  // display version number (set in const)
+  StatusBar.Panels.Items[0].Text :='Version: ' + Version;
+
+  // set software to testmode
+  TestMode := false;
+
+  //this is not needed anymore since the program has moved to FireDAC
+  // instead of ADO
+
+  // create the ADOconnection to the MySQL database using command line parameters
+  // for ODBC connection name, UserID, password
+//  adoConnKTL.LoginPrompt := false;
+//  with adoConnKTL do begin
+//    if not Connected then begin
+//      if ParamCount > 0 then begin
+//     //Provider=MSDASQL.1;Password=Micadas;Persist Security Info=True;User ID=root;Data Source=DMYSQL_KTL
+//        s := s + ';Data Source =' + ParamStr(1);
+//        if ParamCount > 1 then s := s + ';User ID=' + ParamStr(2);
+//        if ParamCount > 2 then begin
+//          s := s + '; Password :=' + ParamStr(3);
+//          adoConnKTL.LoginPrompt := false;
+//        end;
+//        adoConnKTL.ConnectionString := s;
+//      end;
+//    end;
+//    Open;
+//  end;
+
+
+// check if the ConnectionDefinitionFile is present
+// if so load the file
+// if not create a temporary definition set with default parameters
+   // path do file
+
+
+//   Try
+//      FDManager.ConnectionDefFileAutoLoad := false;
+//      FDManager.ConnectionDefFileName := ExtractFilePath(Application.ExeName) + 'conndef.ini';
+//      FDManager.LoadConnectionDefFile;
+//      FDConnection1.ConnectionDefName := 'myconn';
+//      //ShowMessage(FDManager.ConnectionDefs.Count.ToString());
+//      FDConnection1.Connected := True;
+//
+//      //FDConnection1 := TFDConnection.Create(nil);
+//   Except
+//    // catch errors
+//      On E:Exception Do
+//      Begin
+//      ShowMessage(E.message);
+//      ShowMessage(E.ToString);
+//      Exit;
+//
+////      if E.Kind = ekUKViolated Then ShowMessage('ConnDef file not found');
+////      raise;
+//      End;
+//      Else ShowMessage('Error Connecting to the Database. Check connection definitions file.');
+//      if FDManager.ConnectionDefFileLoaded = false then
+//        begin
+//          // use default setting as temporary definition
+//          ShowMessage('no file loaded');
+//            with FDConnection1.Params do
+//            begin
+//              Clear;
+//              Add('DriverID=MySQL');
+//              Add('Database=db_dmams');
+//              Add('User_Name=mams');
+//              Add('Password=Micadas.1');
+//            end;
+//            FDConnection1.Connected := True;
+//        end;
+//   End;
+
+// Load all available batches at the beginning of the program
+  FDQuerySamplesOfBatch.Close;
+  LoadBatches;
+
+  // display a combo box in the Grid instead of a text box
+  cbEAMethods.Parent := StrGrdEAData; //ComboBox in StringGrid
+  cbEAMethods.Visible := False; //ComboBox in StringGrid
+  //set buttons to be disabled
+  btnSendSamplesToEAGrid.Enabled:=false;
+  btnSetEAData.Enabled:=false;
+  btn_up.Enabled:=false;
+  btn_down.Enabled:=false;
+  btn_add_entry.Enabled:=false;
+  btn_remove_entry.Enabled:=false;
+
+end;
+//############################################################################
+
+procedure TfrmPrepEA.GetBatchName;
+begin
+end;
+
+procedure TfrmPrepEA.GetMethods;
+// get available methods from EA by TCPConnection
+// TCP Parameters are set als global variables
+var
+  s, Resp: string;
+  i, k, j: integer;
+begin
+  s := '?MNUM'; //get Number of Methods
+  if not TCPClient1.Connected then
+  try
+    TCPClient1.Connect;
+    sleep(300);
+  except
+    ShowMessage('No connection to EA Software. Unable to read EA methods.');
+  end;
+  if TCPClient1.Connected then
+  begin
+    with TCPClient1.IOHandler do
+    begin
+      WriteLn(s);
+      Resp := ReadLn;
+    end;
+    i := StrToIntDef(ExtractWord(2, Resp, [' ']), 0);
+    for k := 1 to i do
+      with TCPClient1.IOHandler do
+      begin
+        WriteLn('?MNAM' + ' ' + IntToStr(k));
+        Resp := ReadLn;
+        //StatusBar.Panels[2].Text:=Resp; // for testing: display method string
+        s := '';
+        for j := 3 to WordCount(Resp, [' ']) do // Answer could be "MNAM 14 Blank with O2", go through all the words of the method (after word 3)
+        s := s + ' ' + ExtractWord(j, Resp, [' ']); // in case that a method name has 'spaces' in it restore those spaces
+        Delete(s,1,1); //delete the space character in front of the method name
+        // add available methods to dropdown list in EAGrid
+        cbEAMethods.Items.Add(s);
+      end;
+  end;
+end;
+
+procedure TfrmPrepEA.OpenTCP;
+begin
+  try
+    TCPClient1.Connect;
+  except
+    on E: Exception do
+      if (E is EIdConnClosedGracefully) then
+      //
+      else
+        raise
+        //
+  end;
+  sleep(300);
+end;
+
+procedure TfrmPrepEA.RefreshEAGridNumber;
+var
+  ARow: integer;
+begin
+  with StrGrdEAData do begin
+    for ARow := 1 to RowCount - 1 do
+      Cells[0, ARow] := IntToStr(ARow);
+  end;
+end;
+
+procedure TfrmPrepEA.btn_remove_entryClick(Sender: TObject);
+//removes selected line from EAGrid
+begin
+  StrGrdEAData.RemoveRow(StrGrdEAData.Row);
+  CreateRowNumbers;
+end;
+
+procedure TfrmPrepEA.SendBatchToEAGrid;
+var
+  s: string;
+  i: integer;
+begin
+  with FDQuery2 do
+  begin
+    s := 'SELECT sample_nr, weight_combustion, prep_nr, target_nr' +
+      ' FROM target_t' +
+      ' WHERE graph_batch =' + #34 + DataSource1.DataSet.FieldByName('graph_batch').AsString + #34 + ';';
+//    ClipBoard.SetTextBuf(PChar(s));
+    SQL.Text := s;
+    open;
+    if RecordCount > 10 then
+    begin
+      ShowMessage('Batch "' + DataSource1.DataSet.FieldByName('graph_batch').AsString + '" consists of ' +
+        IntToStr(RecordCount) + ' samples. Maximum is 10.' + #13#10 + 'Please check immediately. Exit.');
+      Exit;
+    end;
+    if RecordCount > 0 then
+    begin
+      if StrGrdEAData.RowCount <= 10 then
+      begin
+        StrGrdEAData.RowCount := StrGrdEAData.RowCount + (RecordCount * 2);
+        i := 10;
+        First;
+        while not eof do begin
+          StrGrdEAData.Cells[1, i] := Fields.FieldByName('weight_combustion').AsString;
+          StrGrdEAData.Cells[1, i + 1] := '1';
+          StrGrdEAData.Cells[2, i] := Fields.FieldByName('sample_nr').AsString;
+          StrGrdEAData.Cells[2, i + 1] := 'Blank';
+          StrGrdEAData.Cells[4, i] := Fields.FieldByName('prep_nr').AsString;
+          StrGrdEAData.Cells[5, i] := Fields.FieldByName('target_nr').AsString;
+          StrGrdEAData.Cells[3, i] := '';
+          StrGrdEAData.Cells[3, i + 1] := 'Blank with O2';
+          i := i + 2;
+          Next;
+        end;
+        RefreshEAGridNumber;
+        AddFinalEASamples;
+      end;
+      if StrGrdEAData.RowCount > 10 then
+      begin
+        StrGrdEAData.RowCount := 10;
+        StrGrdEAData.RowCount := StrGrdEAData.RowCount + (RecordCount * 2);
+        i := 10;
+        First;
+        while not eof do begin
+          StrGrdEAData.Cells[1, i] := Fields.FieldByName('weight_combustion').AsString;
+          StrGrdEAData.Cells[1, i + 1] := '1';
+          StrGrdEAData.Cells[2, i] := Fields.FieldByName('sample_nr').AsString;
+          StrGrdEAData.Cells[2, i + 1] := 'Blank';
+          StrGrdEAData.Cells[4, i] := Fields.FieldByName('prep_nr').AsString;
+          StrGrdEAData.Cells[5, i] := Fields.FieldByName('target_nr').AsString;
+          StrGrdEAData.Cells[3, i] := '';
+          StrGrdEAData.Cells[3, i + 1] := 'Blank with O2';
+          i := i + 2;
+          Next;
+        end;
+        RefreshEAGridNumber;
+        AddFinalEASamples;
+        Close;
+      end;
+    end;
+  end;
+end;
+
+procedure TfrmPrepEA.SendBatchToSampleGrd;
+// display the samples of the selected batch in the sample grid
+var
+  t, u, s: string;
+  i: integer;
+  HydroExist: boolean;
+begin
+  HydroExist := false;
+  with FDQuery2 do
+  begin
+    t := 'SELECT sample_nr, target_nr, prep_nr, co2_init, co2_final, hydro_init, hydro_final' +
+      ' FROM target_t' +
+      ' WHERE graph_batch =' + #34 + DataSource1.DataSet.FieldByName('graph_batch').AsString + #34 +
+      ' Order By sample_nr, target_nr' +
+      ';';
+//    ClipBoard.SetTextBuf(PChar(t));
+    SQL.Text := t;
+    open;
+    if RecordCount > 10 then
+    begin
+      // keep buttons disabled
+      btnSendSamplesToEAGrid.Enabled:=false;
+      btnSetEAData.Enabled:=false;
+      // show error message
+      ShowMessage('Batch "' + DataSource1.DataSet.FieldByName('graph_batch').AsString + '" consists of ' + IntToStr(RecordCount) + ' samples. Maximum is 10.' +
+        #13#10 + 'Importing Batch stopped!');
+      Exit;
+    end;
+
+    with FDQueryCheckTargetNr do
+    begin
+      s := 'SELECT *' +
+        ' FROM target_t' +
+        ' WHERE graph_batch =' + #34 + DataSource1.DataSet.FieldByName('graph_batch').AsString + #34 + ';';
+//      ClipBoard.SetTextBuf(PChar(s));
+      SQL.Text := s;
+      open;
+      if HydroExist = true then
+        Exit;
+    end;
+
+    if RecordCount > 0 then
+    begin
+      i := 1;
+      First;
+      while not eof do
+      begin
+        with grdSample1 do
+        begin
+          if i < 11 then
+          begin
+            Cells[SampleCol, i] := Fields.FieldByName('sample_nr').AsString;
+            Cells[PrepCol, i] := Fields.FieldByName('prep_nr').AsString;
+            Cells[TarCol, i] := Fields.FieldByName('target_nr').AsString;
+          end;
+          inc(i);
+          Next;
+        end;
+      end;
+//      frmAMS.lbledGraphBatch.Text := dm.ds.DataSet.FieldByName('batch').AsString;
+      ActiveBatch := DataSource1.DataSet.FieldByName('graph_batch').AsString;
+      StatusBar.Panels[1].Text := 'Active batch: ' + ActiveBatch;
+ //     PressNotSaved := true;
+//      ShowMessage('Send batch "' + dm.ds.DataSet.FieldByName('batch').AsString + '" ' + 'with ' +
+//        IntToStr(RecordCount) + ' samples to grid.');
+      close;
+    end;
+  end;
+end;
+
+procedure TfrmPrepEA.SendSampleToEAgrid(NumOfSamples: integer);
+var
+  i, j, k, rowc: integer;
+  s: string;
+  ARow: integer;
+begin
+  AddInitialEASamples; // add initial samples to the template (RunsIns)
+  (*if StrGrdEAData.RowCount > 7 then begin
+    StrGrdEAData.RowCount := 7;
+  end; *)
+  i := 2; //used to be 7 because there where 7 initial samples
+
+  // query database in order to get number of samples
+  with FDQuery2 do
+  begin
+    s := 'SELECT sample_nr, weight_combustion, prep_nr, target_nr' +
+      ' FROM target_t' +
+      ' WHERE graph_batch =' + #34 + DataSource1.DataSet.FieldByName('graph_batch').AsString + #34 + ';';
+    SQL.Text := s;
+    open;
+    // add new lines to the EAGrid
+    if RecordCount > 0 then
+    begin
+      StrGrdEAData.RowCount := StrGrdEAData.RowCount + (RecordCount * 2);
+    end;
+  end;
+
+  // fill in weights and sample info etc etc into the EAGrid
+  j := 1;
+  while j <= NumOfSamples do
+  begin
+    //sample_nr: sample_nr.prep_nr.target_nr
+    StrGrdEAData.Cells[2, i] := grdSample1.Cells[SampleCol, j] + '.' + grdSample1.Cells[PrepCol, j] + '.' + grdSample1.Cells[TarCol, j] ;
+    // Method for samples
+    StrGrdEAData.Cells[3, i] := 'G_100s';
+    // sample_Nr: the RunIns between the samples
+    StrGrdEAData.Cells[2, i + 1] := 'RunIn';
+
+    // query database for sample weight of this sample and insert weight into EAGrid
+    with FDQuery2 do
+    begin
+      s := 'SELECT weight_combustion, prep_nr, target_nr' +
+        ' FROM target_t' +
+        ' WHERE sample_nr =' + #34 + grdSample1.Cells[SampleCol, j] + #34 +
+        ' AND preparation_nr = ' + #34 + grdSample1.Cells[PrepCol, j] + #34 +
+        ' AND target_nr = ' + #34 + grdSample1.Cells[TarCol, j] + #34 + ';';
+      SQL.Text := s;
+      open;
+      if RecordCount > 0 then
+      begin
+        StrGrdEAData.Cells[1, i] := Fields.FieldByName('weight_combustion').AsString;
+        StrGrdEAData.Cells[1, i + 1] := '1';
+        Close;
+      end
+      else
+      begin
+        //Something happened while getting weights
+        ShowMessage('Error while getting weights from database.');
+      end;
+    end;
+    // insert prep_nr and target_nr
+    StrGrdEAData.Cells[4, i] := grdSample1.Cells[prepCol, j]; //prep_nr
+    StrGrdEAData.Cells[5, i] := grdSample1.Cells[tarCol, j]; //target_nr
+    //StrGrdEAData.Cells[3, i] := '';
+    StrGrdEAData.Cells[3, i + 1] := 'Blank with O2';
+    i := i + 2;
+    inc(j);
+  end;
+
+  // create new row numbers
+  CreateRowNumbers;
+
+  // add entries after the samples (RunIns etc etc)
+  (* with StrGrdEAData do begin
+    k := RowCount;
+    RowCount := RowCount + 3;
+    for ARow := k to k + 3 do
+      Cells[1, ARow] := '1';
+    Cells[2, k] := 'RunIn';
+    Cells[3, k] := 'Blank with O2';
+    Cells[4, k] := '';
+    Cells[5, k] := '';
+    for ARow := k + 1 to k + 2 do begin
+      Cells[2, ARow] := 'acetanilid';
+      Cells[3, ARow] := '2mgChem80s';
+      Cells[4, ARow] := '';
+      Cells[5, ARow] := '';
+    end;
+  end;  *)
+  with StrGrdEAData do begin
+    for ARow := 1 to RowCount - 1 do
+      Cells[0, ARow] := IntToStr(ARow);
+  end;
+end;
+
+procedure TfrmPrepEA.SendGridDataToEA;
+// send the EAGrid to the EA via TCPConnection
+var
+  sWGH, sSNr, sNAM, sMET, Resp, t: string;
+  i, j, ARow: integer;
+  FieldEmpty: Boolean;
+  EALine: integer;
+begin
+  // set the line where the new data should be inserte into
+  EALine := strtoint(EditInsertIntoEALine.Text)-1;
+
+  j := 1;
+  // get the name of the first sample in line 1
+  t := '?NAM' + ' 1';
+  if not TcpClient1.Connected then OpentCP;
+  // TcpClient1.Port := SvrPort;
+  if TcpClient1.Connected then
+    with TCPClient1.IOHandler do
+    begin
+      WriteLn(t);
+      sleep(100)
+    end;
+ // if WordCount(Resp, [' ']) = 2 then begin //No Name in first Row (Col: Name) of VarioMICRO prgmm
+
+  // check if there's an empty field in the Grid
+  FieldEmpty := false;
+  for ARow := 1 to StrGrdEAData.RowCount - 1 do
+    if length(StrGrdEAData.Cells[3, ARow]) = 0 then FieldEmpty := true;
+
+  // if there's no empty field in the grid go through every row and send data to EA
+  if not FieldEmpty then
+    with StrGrdEAData do
+    begin
+      for i := 1 to RowCount - 1 do
+      begin
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
+        sNAM := Cells[2, i];
+        SetName(sSNr, sNAM); // send name to EA
+        sleep(100);
+      end;
+      for i := 1 to RowCount - 1 do
+      begin
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
+        sMET := Cells[3, i];
+        SetMethod(sSNr, sMET); // send method to EA
+        sleep(100);
+      end;
+      for i := 1 to RowCount - 1 do
+      begin
+        // sSNr := Cells[0, i];
+        sSNR := inttostr((strtoint(Cells[0, i]) + EALine));
+        sWGH := Cells[1, i];
+        SetWeight(sSNr, sWGH);  // send weight to EA
+        sleep(100);
+      end;
+    end
+  else
+    ShowMessage('Method fields cannot be empty!');
+  //end
+ // else begin
+   // ShowMessage('Please create new VarioMICRO document before sending new Data.')
+  //CloseTCP;
+end;
+
+procedure TfrmPrepEA.SetMethod(SampleNr, Method: string);
+var
+  MET: string;
+begin
+  MET := '!MET ' + SampleNr + ' ' + Method;
+//  OpenTCP;
+  TcpClient1.Port := SvrPort;
+  if not TcpClient1.Connected then OpenTCP;
+  if TcpClient1.Connected then
+    with TCPClient1.IOHandler do
+    begin
+      WriteLn(MET);
+    end;
+end;
+
+procedure TfrmPrepEA.SetName(SampleNr, Name: string);
+var
+  NAM: string;
+begin
+  NAM := '!NAM ' + SampleNr + ' ' + Name;
+
+  if not TcpClient1.Connected then OpenTCP;
+  if TcpClient1.Connected then
+    with TCPClient1.IOHandler do
+    begin
+      WriteLn(NAM);
+    end;
+//  CloseTCP;
+end;
+
+procedure TfrmPrepEA.SetWeight(SampleNr, Weight: string);
+var
+  WGH: string;
+begin
+  WGH := '!WGH ' + SampleNr + ' ' + Weight;
+//  OpentCP;
+  if not TcpClient1.Connected then OpenTCP;
+  if TcpClient1.Connected then
+    with TCPClient1.IOHandler do
+    begin
+      WriteLn(WGH);
+    end;
+//  CloseTCP;
+end;
+
+procedure TfrmPrepEA.LoadBatches;
+begin
+  // query the database for available batches within the last 2 month
+  // that are not graphitized yet
+  if CheckBoxShowAllBatches.Checked then
+  Begin
+      with FDQuery1 do
+        begin
+          SQL.Text := 'SELECT distinct graph_batch FROM target_t t ' +
+          'inner join preparation_t p on t.sample_nr=p.sample_nr  ' +
+          'WHERE prep_end > DATE_SUB(now(), INTERVAL 6 MONTH) ' +
+          ' and graph_batch IS NOT NULL AND graph_date IS NULL '
+          + ' order by prep_end desc; ';
+          open;
+        end;
+  End
+  Else if not CheckBoxShowAllBatches.Checked then
+  Begin
+      with FDQuery1 do
+      begin
+        SQL.Text := 'SELECT distinct graph_batch FROM target_t t ' +
+        'inner join preparation_t p on t.sample_nr=p.sample_nr  ' +
+        'WHERE prep_end > DATE_SUB(now(), INTERVAL 3 MONTH) ' +
+        ' and graph_batch IS NOT NULL AND graph_date IS NULL AND graphitized IS NULL '
+        + ' order by prep_end desc; ';
+        open;
+      end;
+  End
+end;
+
+
+procedure TfrmPrepEA.StrGrdEADataSelectCell(Sender: TObject; ACol,
+  ARow: Integer; var CanSelect: Boolean);
+// I think this handles the dropdown behavior of the methods field
+var
+  R: TRect;
+  org: TPoint;
+begin
+  if (ACol = 3) and (ARow >= StrGrdEAData.FixedRows) then begin  //if the column with the dropdown list is selected do this
+    StrGrdEAData.Perform(WM_CANCELMODE, 0, 0);
+    R := StrGrdEAData.CellRect(ACol, ARow);
+    org := self.ScreenToClient(self.ClientToScreen(R.TopLeft));
+    with cbEAMethods do begin
+      SetBounds(org.X, org.Y, R.Right - R.Left, StrGrdEAData.Height);
+      ItemIndex := Items.IndexOf(StrGrdEAData.Cells[ACol, ARow]);
+      Show;
+      BringToFront;
+      SetFocus;
+      DroppedDown := true;
+    end;
+  end;
+end;
+
+end.
+
